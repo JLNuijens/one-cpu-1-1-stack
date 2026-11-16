@@ -20,12 +20,16 @@ module tb;
         .ena    (ena)
     );
 
-    // same XOR, one level, 0.10 ns
     wire [7:0] refpin = ui ^ 8'hFF;
     wire [7:0] delayed;
     assign #(100) delayed = ui ^ 8'hFF;
 
     integer i, fails, seen, t0, got;
+    integer n;
+    reg [7:0] tx_line;
+    reg [7:0] spi_line;
+    reg [7:0] i2c_line;
+    reg [9:0] txbits;
 
     initial begin
         fails  = 0;
@@ -35,7 +39,6 @@ module tb;
         uio_in = 8'h00;
         ui     = 8'h00;
 
-        // clock held. reset held. every code.
         for (i = 0; i < 256; i = i + 1) begin
             ui = i[7:0];
             #1000;
@@ -49,12 +52,11 @@ module tb;
             end
         end
 
-        // clock, reset, and enable all move. the pin stays with the code.
         ui   = 8'h5B;
         #1000;
         seen = uo;
-        rst_n = 1'b1;
-        ena   = 1'b1;
+        rst_n  = 1'b1;
+        ena    = 1'b1;
         uio_in = 8'hFF;
         repeat (8) begin
             clk = ~clk;
@@ -69,7 +71,40 @@ module tb;
             fails = fails + 1;
         end
 
-        // settle
+        clk = 1'b0;
+        txbits = 10'b1010101010;
+
+        tx_line = 8'h00;
+        for (n = 0; n < 10; n = n + 1) begin
+            ui = {7'b0, txbits[9 - n]};
+            #1000;
+            if (uo[0] !== ~txbits[9 - n]) begin
+                $display("FAIL UART bit %0d pin %b", n, uo[0]);
+                fails = fails + 1;
+            end
+            $display("UART %0d code0 %b TX %b", n, txbits[9 - n], uo[0]);
+        end
+
+        ui = 8'b00000000;
+        #1000;
+        ui = 8'b0001_0110;
+        #1000;
+        spi_line = uo;
+        if (uo[1] !== 1'b0 || uo[2] !== 1'b0 || uo[4] !== 1'b0) begin
+            $display("FAIL SPI %b", uo);
+            fails = fails + 1;
+        end
+        $display("SPI SCLK %b CS %b MOSI %b", uo[1], uo[2], uo[4]);
+
+        ui = 8'b0010_1000;
+        #1000;
+        i2c_line = uo;
+        if (uo[3] !== 1'b0 || uo[5] !== 1'b0) begin
+            $display("FAIL I2C %b", uo);
+            fails = fails + 1;
+        end
+        $display("I2C SCL %b SDA %b", uo[3], uo[5]);
+
         ui = 8'h00;
         #5000;
         ui = 8'hA5;
